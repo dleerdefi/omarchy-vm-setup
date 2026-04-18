@@ -29,6 +29,10 @@ systemctl enable --now libvirtd.service
 systemctl enable libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket
 systemctl enable virtlogd.service
 
+echo "==> Starting default NAT network..."
+virsh net-start default 2>/dev/null || true
+virsh net-autostart default
+
 echo "==> Installing libvirt-docker-fix.service..."
 cp "$SCRIPT_DIR/libvirt-docker-fix.service" /etc/systemd/system/
 systemctl daemon-reload
