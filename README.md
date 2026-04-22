@@ -12,8 +12,8 @@ explicitly allowed. libvirt puts its own forwarding and NAT rules in a separate 
 table, but Docker's drop policy runs first and silently kills VM internet traffic.
 
 The fix is a small systemd service (`libvirt-docker-fix.service`) that runs after both
-Docker and libvirtd start, and adds the two rules needed to punch virbr0 traffic through
-Docker's forward chain.
+Docker and libvirtd start, and adds the two rules needed to allow virbr0 traffic through
+Docker's `DOCKER-USER` chain.
 
 ## Prerequisites
 
