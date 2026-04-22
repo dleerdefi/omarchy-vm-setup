@@ -2,6 +2,8 @@
 
 KVM/libvirt virtual machine setup for Omarchy (Arch Linux) machines that also run Docker.
 
+![Omarchy with a libvirt VM running](screenshots/omarchy-vm.png)
+
 ## The Problem
 
 Docker and libvirt both manage firewall rules, and they conflict. Docker creates an
@@ -21,8 +23,8 @@ Docker's forward chain.
 ## Setup
 
 ```bash
-git clone https://github.com/dleerdefi/Omarchy-VM-Setup.git
-cd Omarchy-VM-Setup
+git clone https://github.com/dleerdefi/omarchy-vm-setup.git
+cd omarchy-vm-setup
 sudo bash setup.sh
 ```
 
@@ -146,3 +148,7 @@ nft add rule ip filter DOCKER-USER oifname "virbr0" ct state established,related
 `DOCKER-USER` is Docker's dedicated chain for user-defined rules — Docker never flushes
 it on restart, so these rules persist across Docker restarts. The service re-applies them
 on every system boot.
+
+## License
+
+MIT © 2026 dleerdefi
