@@ -11,9 +11,14 @@ nftables `FORWARD` chain with `policy drop` — all forwarded traffic is blocked
 explicitly allowed. libvirt puts its own forwarding and NAT rules in a separate nftables
 table, but Docker's drop policy runs first and silently kills VM internet traffic.
 
-The fix is a small systemd service (`libvirt-docker-fix.service`) that runs after both
-Docker and libvirtd start, and adds the two rules needed to allow virbr0 traffic through
-Docker's `DOCKER-USER` chain.
+How `setup.sh` fixes it depends on the Omarchy version:
+
+- **Omarchy 4 (Quattro) and anything else with `ufw`:** it adds four ufw rules for
+  `virbr0` (DHCP and DNS to libvirt's dnsmasq, and forwarding in both directions).
+  See [Omarchy 4 and ufw](#omarchy-4-and-ufw).
+- **Omarchy 3 (no ufw):** it installs a small systemd service
+  (`libvirt-docker-fix.service`) that runs after both Docker and libvirtd start, and adds
+  the two rules needed to allow virbr0 traffic through Docker's `DOCKER-USER` chain.
 
 ## Prerequisites
 
@@ -41,7 +46,8 @@ groups $USER
 
 # Services should be active/enabled
 systemctl is-active libvirtd
-systemctl is-enabled libvirt-docker-fix
+systemctl is-enabled libvirt-docker-fix   # Omarchy 3
+sudo ufw status | grep virbr0             # Omarchy 4: four virbr0 rules
 ```
 
 ## Where to put ISOs and disk images
@@ -113,7 +119,8 @@ virt-install \
 VMs and their state persist across host reboots automatically:
 
 - `libvirtd` and the default NAT network start on boot
-- `libvirt-docker-fix.service` re-applies the nftables fix on every boot
+- On Omarchy 4, ufw keeps the virbr0 rules; on Omarchy 3, `libvirt-docker-fix.service`
+  re-applies the nftables fix on every boot
 - Changes inside a VM are saved to its qcow2 on shutdown
 
 **Optional — auto-start a VM when your host boots:**
@@ -148,6 +155,38 @@ nft add rule ip filter DOCKER-USER oifname "virbr0" ct state established,related
 `DOCKER-USER` is Docker's dedicated chain for user-defined rules — Docker never flushes
 it on restart, so these rules persist across Docker restarts. The service re-applies them
 on every system boot.
+
+## Omarchy 4 and ufw
+
+Omarchy 4 (Quattro) turns on `ufw` with default-deny incoming and routed traffic, and
+installs [ufw-docker](https://github.com/chaifeng/ufw-docker), which also writes to
+`DOCKER-USER`. That breaks the service above in two ways:
+
+1. ufw-docker's rules end with an unconditional `return`. Rules the service *appends*
+   after it never match.
+2. ufw's default deny blocks the VMs' DHCP and DNS requests to libvirt's dnsmasq on
+   `virbr0`, so VMs never get an address ("Network is unreachable").
+
+On machines with ufw, `setup.sh` expresses the same intent in ufw instead, and disables
+`libvirt-docker-fix.service` if it was installed earlier:
+
+```bash
+sudo ufw allow in on virbr0 to any port 67 proto udp comment 'libvirt DHCP'
+sudo ufw allow in on virbr0 to any port 53 comment 'libvirt DNS'
+sudo ufw route allow in on virbr0 comment 'libvirt VMs out'
+sudo ufw route allow out on virbr0 comment 'libvirt VMs return'
+```
+
+The `route` rules land in `ufw-user-forward`, which ufw-docker's `DOCKER-USER` jumps to
+first, so forwarded VM traffic is accepted before any of its returns. ufw stores the rules
+itself, so they persist across reboots with no service.
+
+Verify from inside a VM: `ping -c3 1.1.1.1` and `curl -sI https://archlinux.org`.
+
+**Docker at boot:** Omarchy 4 starts Docker by socket activation (`docker.socket`), not
+`docker.service`. The old service's `Requires=docker.service` used to start Docker at
+boot as a side effect. If you rely on containers with restart policies coming up at boot,
+enable it yourself: `sudo systemctl enable docker.service`.
 
 ## License
 
