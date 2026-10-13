@@ -33,10 +33,27 @@ echo "==> Starting default NAT network..."
 virsh net-start default 2>/dev/null || true
 virsh net-autostart default
 
-echo "==> Installing libvirt-docker-fix.service..."
-cp "$SCRIPT_DIR/libvirt-docker-fix.service" /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable libvirt-docker-fix.service
+if command -v ufw >/dev/null 2>&1; then
+    # Omarchy 4 (Quattro) manages the firewall with ufw and ufw-docker. ufw-docker owns
+    # DOCKER-USER and ends it with a RETURN, so rules appended there never match, and
+    # ufw's default deny blocks the VMs' DHCP/DNS requests to libvirt's dnsmasq.
+    # Allow virbr0 in ufw instead: DOCKER-USER jumps to ufw-user-forward first.
+    echo "==> Allowing libvirt's virbr0 through ufw..."
+    ufw allow in on virbr0 to any port 67 proto udp comment 'libvirt DHCP'
+    ufw allow in on virbr0 to any port 53 comment 'libvirt DNS'
+    ufw route allow in on virbr0 comment 'libvirt VMs out'
+    ufw route allow out on virbr0 comment 'libvirt VMs return'
+
+    if systemctl is-enabled --quiet libvirt-docker-fix.service 2>/dev/null; then
+        echo "==> Retiring libvirt-docker-fix.service (superseded by the ufw rules)..."
+        systemctl disable libvirt-docker-fix.service
+    fi
+else
+    echo "==> Installing libvirt-docker-fix.service..."
+    cp "$SCRIPT_DIR/libvirt-docker-fix.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable libvirt-docker-fix.service
+fi
 
 echo ""
 echo "Done. IMPORTANT: log out and back in for group membership to take effect."
